@@ -20,6 +20,10 @@ protected:
     void RefreshPaths();
 
     afx_msg void OnAddPathBtnClicked();
+    afx_msg void OnDelPathBtnClicked();
+
+    afx_msg void OnSettingsEdit();
+    afx_msg void OnSaveSettingsBtnClicked();
 
     afx_msg LRESULT OnKickIdle(WPARAM, LPARAM);
     afx_msg void OnUpdate(CCmdUI* pCmdUI);
@@ -28,7 +32,13 @@ protected:
 
     enum { IDD = IDD_MAIN_DLG };
 
+private:
+    DWORD prevMaxPathsSize;
+
 public:
     CEdit m_addPathEdit;
     CListBox m_blockedPathsList;
+    CButton m_pbEnableCheck;
+    CEdit m_maxPathsSizeEdit;
+    CButton m_saveSettingsBtn;
 };

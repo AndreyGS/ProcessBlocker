@@ -79,17 +79,17 @@ NTSTATUS ReadSettingsFromRegistry(RegistryValues value);
 NTSTATUS WriteSettingsToRegistry(RegistryValues value);
 
 template<typename T>
-NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN PCUNICODE_STRING valueName, OUT T& settingValue, IN T defaultSettingValue);
+NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN const UNICODE_STRING& valueName, IN RegistryValues value, OUT T& settingValue, IN T defaultSettingValue);
 
 void ClearProcPathsList();
 
 NTSTATUS NormalizePath(OUT UNICODE_STRING& path, IN const UNICODE_STRING& rawPath);
-NTSTATUS RemovePath(PCUNICODE_STRING pPath);
-NTSTATUS AddPath(PCUNICODE_STRING pPath);
+NTSTATUS RemovePath(const UNICODE_STRING& path);
+NTSTATUS AddPath(const UNICODE_STRING& path);
 
 extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath) {
     NTSTATUS status = STATUS_SUCCESS;
-
+    __debugbreak();
     pDriverObject->DriverUnload = DriverUnload;
     pDriverObject->MajorFunction[IRP_MJ_CREATE] = pDriverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchCreateClose;
     pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchDeviceControl;
@@ -175,7 +175,7 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
 
     switch (pStack->Parameters.DeviceIoControl.IoControlCode) {
     case IOCTL_SET_SETTINGS: {
-        if (pStack->Parameters.DeviceIoControl.InputBufferLength != sizeof(PROC_BLOCK_SETTINGS)) {
+        if (pStack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(PROC_BLOCK_SETTINGS)) {
             status = STATUS_INVALID_BUFFER_SIZE;
             break;
         }
@@ -217,7 +217,7 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
         break;
     }
 
-    case IOCTL_ADD_PATH: {
+    case IOCTL_SET_PATH: {
         if (pStack->Parameters.DeviceIoControl.OutputBufferLength - sizeof(PathBuffer) + sizeof(CHAR) 
             > g_settings.maxPathsSize - (g_valueDataSize > MIN_DATA_SIZE ? g_valueDataSize : sizeof(END_OF_REG_MULTI_SZ))) 
         {
@@ -239,9 +239,11 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
             break;
 
         if (pBuffer->add)
-            status = AddPath(&path);
-        else
-            status = RemovePath(&path);
+            status = AddPath(path);
+        else {
+            status = RemovePath(path);
+            ExFreePoolWithTag(path.Buffer, PROCBLOCK_POOL_TAG);
+        }
 
         break;
     }
@@ -281,10 +283,10 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
 
             do {
                 UNICODE_STRING& path = ((PBLOCKED_PROCESS_PATH)pListItem)->path;
-                ULONG length = path.Length + sizeof(WCHAR);
+                ULONG length = path.MaximumLength;
 
                 if (length > restOfBufferLen) {
-                    status = STATUS_MORE_ENTRIES;
+                    status = STATUS_BUFFER_OVERFLOW;
                     break;
                 }
 
@@ -494,10 +496,10 @@ NTSTATUS ReadSettingsFromRegistry(RegistryValues value) {
     if (NT_SUCCESS(status)) {
         switch (value) {
         case RegistryValues::BlockingEnabled:
-            status = ReadSettingDwordValue(hKey, &REGISTRY_BLOCKING_ENABLED, g_settings.isEnabled, false);
+            status = ReadSettingDwordValue(hKey, REGISTRY_BLOCKING_ENABLED, value, g_settings.isEnabled, false);
             break;
         case RegistryValues::DataMaxSize:
-            status = ReadSettingDwordValue(hKey, &REGISTRY_PATHS_MAX_SIZE, g_settings.maxPathsSize, DEFAULT_MAX_DATA_SIZE);
+            status = ReadSettingDwordValue(hKey, REGISTRY_PATHS_MAX_SIZE, value, g_settings.maxPathsSize, DEFAULT_MAX_DATA_SIZE);
             break;
         case RegistryValues::Paths: {
             PKEY_VALUE_PARTIAL_INFORMATION pKeyValueInfo = nullptr;
@@ -531,7 +533,7 @@ NTSTATUS ReadSettingsFromRegistry(RegistryValues value) {
                 UCHAR* s = nullptr;
 
                 s = pKeyValueInfo->Data;
-                while (*s != L'\0') {
+                while (*(WCHAR*)s != L'\0') {
                     PBLOCKED_PROCESS_PATH pPath = nullptr;
                     WCHAR* pBuffer = nullptr;
 
@@ -542,9 +544,10 @@ NTSTATUS ReadSettingsFromRegistry(RegistryValues value) {
                         break;
                     }
 
+                    // First get the Length and MaxLength fields values of BLOCKED_PROCESS_PATH::path
                     RtlInitUnicodeString(&pPath->path, (WCHAR*)s);
 
-                    pBuffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, pPath->path.Length + sizeof(WCHAR), PROCBLOCK_POOL_TAG);
+                    pBuffer = (WCHAR*)ExAllocatePoolWithTag(PagedPool, pPath->path.MaximumLength, PROCBLOCK_POOL_TAG);
 
                     if (!pBuffer) {
                         ExFreePoolWithTag(pPath, PROCBLOCK_POOL_TAG);
@@ -552,10 +555,11 @@ NTSTATUS ReadSettingsFromRegistry(RegistryValues value) {
                         break;
                     }
 
-                    RtlCopyMemory(pBuffer, s, pPath->path.Length + sizeof(WCHAR));
+                    RtlCopyMemory(pBuffer, s, pPath->path.MaximumLength);
+                    pPath->path.Buffer = pBuffer;
 
                     InsertTailList(&g_headOfBlockedPaths, (LIST_ENTRY*)pPath);
-                    s += pPath->path.Length + sizeof(WCHAR);
+                    s += pPath->path.MaximumLength;
                 }
 
                 g_valueDataSize = pKeyValueInfo->DataLength;
@@ -578,7 +582,7 @@ NTSTATUS ReadSettingsFromRegistry(RegistryValues value) {
 }
 
 template<typename T>
-NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN PCUNICODE_STRING valueName, OUT T& settingValue, IN T defaultSettingValue) {
+NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN const UNICODE_STRING& valueName, IN RegistryValues value, OUT T& settingValue, IN T defaultSettingValue) {
     NTSTATUS status = STATUS_SUCCESS;
     PKEY_VALUE_PARTIAL_INFORMATION pKeyValueInfo = nullptr;
     ULONG size = 0;
@@ -586,10 +590,10 @@ NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN PCUNICODE_STRING valueName, OU
     settingValue = defaultSettingValue;
 
     do {
-        status = ZwQueryValueKey(hKey, const_cast<PUNICODE_STRING>(valueName), KeyValuePartialInformation, nullptr, 0, &size);
+        status = ZwQueryValueKey(hKey, const_cast<PUNICODE_STRING>(&valueName), KeyValuePartialInformation, nullptr, 0, &size);
 
         if (status != STATUS_BUFFER_TOO_SMALL || !(status == STATUS_BUFFER_TOO_SMALL && size == sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG) - sizeof(UCHAR))) {
-            status = WriteSettingsToRegistry(RegistryValues::BlockingEnabled);
+            status = WriteSettingsToRegistry(value);
             break;
         }
 
@@ -600,7 +604,7 @@ NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN PCUNICODE_STRING valueName, OU
             break;
         }
 
-        status = ZwQueryValueKey(hKey, const_cast<PUNICODE_STRING>(valueName), KeyValuePartialInformation, pKeyValueInfo, size, &size);
+        status = ZwQueryValueKey(hKey, const_cast<PUNICODE_STRING>(&valueName), KeyValuePartialInformation, pKeyValueInfo, size, &size);
 
         if (NT_SUCCESS(status))
             settingValue = (T) * (ULONG*)pKeyValueInfo->Data;
@@ -656,7 +660,7 @@ NTSTATUS WriteSettingsToRegistry(RegistryValues value) {
 
                 do {
                     pItemPath = &((PBLOCKED_PROCESS_PATH)pListItem)->path;
-                    length = pItemPath->Length + sizeof(WCHAR);
+                    length = pItemPath->MaximumLength;
 
                     RtlCopyMemory(pTempPath, pItemPath->Buffer, length);
                     pTempPath += length;
@@ -685,7 +689,7 @@ NTSTATUS WriteSettingsToRegistry(RegistryValues value) {
     return status;
 }
 
-NTSTATUS AddPath(PCUNICODE_STRING pPath) {
+NTSTATUS AddPath(const UNICODE_STRING& path) {
     NTSTATUS status = STATUS_UNSUCCESSFUL;
     PBLOCKED_PROCESS_PATH pBlockedProcessPath = nullptr;
 
@@ -697,7 +701,7 @@ NTSTATUS AddPath(PCUNICODE_STRING pPath) {
             break;
         }
         
-        pBlockedProcessPath->path = *pPath;
+        pBlockedProcessPath->path = path;
 
         {
             AutoLock guard(&g_guard);
@@ -709,7 +713,7 @@ NTSTATUS AddPath(PCUNICODE_STRING pPath) {
             
             InsertTailList(&g_headOfBlockedPaths, (LIST_ENTRY*)pBlockedProcessPath);
             g_valueDataSize += g_valueDataSize > MIN_DATA_SIZE
-                            ? pBlockedProcessPath->path.Length + sizeof(WCHAR) 
+                            ? pBlockedProcessPath->path.MaximumLength 
                             : pBlockedProcessPath->path.Length;
 
             status = WriteSettingsToRegistry(RegistryValues::Paths);
@@ -720,21 +724,14 @@ NTSTATUS AddPath(PCUNICODE_STRING pPath) {
     return status;
 }
 
-NTSTATUS RemovePath(PCUNICODE_STRING pPath) {
+NTSTATUS RemovePath(const UNICODE_STRING& path) {
     NTSTATUS status = STATUS_UNSUCCESSFUL;
-    UNICODE_STRING cmd = { 0 }, path = { 0 };
 
     do {
-        if (pPath->Length + sizeof(WCHAR) > g_settings.maxPathsSize) {
+        if (path.Length + sizeof(WCHAR) > g_settings.maxPathsSize) {
             status = STATUS_BAD_DATA;
             break;
         }
-
-        if (!NT_SUCCESS(status = DowncaseUnicodeString(&cmd, pPath)))
-            break;
-
-        if (!NT_SUCCESS(status = GetPathFromCmd(&cmd, &path)))
-            break;
 
         {
             AutoLock guard(&g_guard);
@@ -763,12 +760,6 @@ NTSTATUS RemovePath(PCUNICODE_STRING pPath) {
         }
 
     } while (false);
-
-    if (cmd.Buffer)
-        ExFreePoolWithTag(cmd.Buffer, PROCBLOCK_POOL_TAG);
-
-    if (path.Buffer)
-        ExFreePoolWithTag(path.Buffer, PROCBLOCK_POOL_TAG);
 
     return status;
 }
