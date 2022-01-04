@@ -1,0 +1,6 @@
+exprocblock/.vs/**
+exprocblock/x64/**
+exprocblock/Debug/**
+expbapp/x64/**
+expbapp/Debug/**
+*.aps
