@@ -19,8 +19,12 @@ protected:
     
     void RefreshPaths();
 
+    afx_msg void OnAddPathBrowseBtnClicked();
+
     afx_msg void OnAddPathBtnClicked();
     afx_msg void OnDelPathBtnClicked();
+
+    afx_msg void OnDelAllPathBtnClicked();
 
     afx_msg void OnSettingsEdit();
     afx_msg void OnSaveSettingsBtnClicked();

@@ -19,14 +19,17 @@ BOOL CPBApp::InitInstance()
 IMPLEMENT_DYNAMIC(CPBDialog, CDialog)
 
 BEGIN_MESSAGE_MAP(CPBDialog, CDialog)
+    ON_BN_CLICKED(IDC_ADD_PATH_BROWSE_BTN, OnAddPathBrowseBtnClicked)
     ON_BN_CLICKED(IDC_ADD_PATH_BTN, OnAddPathBtnClicked)
     ON_BN_CLICKED(IDC_DELETE_PATH_BTN, OnDelPathBtnClicked)
+    ON_BN_CLICKED(IDC_DELETE_ALL_PATH_BTN, OnDelAllPathBtnClicked)
     ON_BN_CLICKED(IDC_PROC_BLOCK_ENABLE_CHECK, OnSettingsEdit)
     ON_BN_CLICKED(IDC_SAVE_SETTINGS_BTN, OnSaveSettingsBtnClicked)
     ON_EN_CHANGE(IDC_MAX_PATHS_SIZE_EDIT, OnSettingsEdit)
     ON_MESSAGE(WM_KICKIDLE, OnKickIdle)
     ON_UPDATE_COMMAND_UI(IDC_ADD_PATH_BTN, OnUpdate)
     ON_UPDATE_COMMAND_UI(IDC_DELETE_PATH_BTN, OnUpdate)
+    ON_UPDATE_COMMAND_UI(IDC_DELETE_ALL_PATH_BTN, OnUpdate)
 END_MESSAGE_MAP()
 
 void CPBDialog::DoDataExchange(CDataExchange* pDX) {
@@ -68,20 +71,38 @@ BOOL CPBDialog::OnInitDialog() {
     return TRUE;
 }
 
-void CPBDialog::OnAddPathBtnClicked() {
-    CString path; 
-    m_addPathEdit.GetWindowTextW(path);
+void CPBDialog::OnAddPathBrowseBtnClicked() {
+    OPENFILENAME ofn = { 0 };
+    WCHAR szFile[2048] = { 0 };
 
-    if (m_pbDriver.AddPath(path.GetBuffer())) {
+    ofn.lStructSize = sizeof(ofn);
+    ofn.hwndOwner = m_hWnd;
+    ofn.lpstrFile = szFile;
+    ofn.nMaxFile = sizeof(szFile);
+    ofn.lpstrFilter = L"All\0*.*\0Executive\0*.exe\0";
+    ofn.nFilterIndex = 1;
+    ofn.lpstrFileTitle = nullptr;
+    ofn.nMaxFileTitle = 0;
+    ofn.lpstrInitialDir = nullptr;
+    ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+
+    if (GetOpenFileName(&ofn) == TRUE)
+        m_addPathEdit.SetWindowTextW(ofn.lpstrFile);
+}
+
+void CPBDialog::OnAddPathBtnClicked() {
+    CString path, pathWithQuotationMarks;
+    pathWithQuotationMarks = L"\"";
+    m_addPathEdit.GetWindowTextW(path);
+    pathWithQuotationMarks += path + L"\"";
+
+    if (m_pbDriver.AddPath(pathWithQuotationMarks.GetBuffer())) {
         MessageBox(L"Path was successfuly added to list", L"", MB_OK);
         m_addPathEdit.SetWindowTextW(L"");
         RefreshPaths();
     }
-    else {
-        std::wstring errorMsg(L"Path wasn't added to list. ");
-        errorMsg += GetLastErrorStr();
-        MessageBox(errorMsg.c_str(), L"", MB_ICONERROR);
-    }
+    else
+        ShowErrorMsg(m_hWnd, L"Path wasn't added to list. ", L"", MB_ICONERROR);
 }
 
 void CPBDialog::OnDelPathBtnClicked() {
@@ -100,11 +121,16 @@ void CPBDialog::OnDelPathBtnClicked() {
         m_addPathEdit.SetWindowTextW(L"");
         RefreshPaths();
     }
-    else {
-        std::wstring errorMsg(L"Path wasn't deleted from list. ");
-        errorMsg += GetLastErrorStr();
-        MessageBox(errorMsg.c_str(), L"", MB_ICONERROR);
-    }
+    else
+        ShowErrorMsg(m_hWnd, L"Deleting path from blocked process list ended with error. ", L"", MB_ICONERROR);
+}
+
+void CPBDialog::OnDelAllPathBtnClicked() {
+    if (MessageBox(L"Delete All Paths from list?", L"", MB_OKCANCEL) == IDOK)
+        if (m_pbDriver.DelAllPaths())
+            RefreshPaths();
+        else
+            ShowErrorMsg(m_hWnd, L"Deleting paths from blocked process list ended with error. ", L"", MB_ICONERROR);
 }
 
 void CPBDialog::OnSettingsEdit() {
@@ -126,11 +152,8 @@ void CPBDialog::OnSaveSettingsBtnClicked() {
         MessageBox(L"Settings successfully saved!", L"", MB_OK);
         m_saveSettingsBtn.EnableWindow(FALSE);
     }
-    else {
-        std::wstring errorMsg(L"Settings not saved! ");
-        errorMsg += GetLastErrorStr();
-        MessageBox(errorMsg.c_str(), L"", MB_ICONERROR);
-    }
+    else
+        ShowErrorMsg(m_hWnd, L"Settings not saved! ", L"", MB_ICONERROR);
 }
 
 LRESULT CPBDialog::OnKickIdle(WPARAM, LPARAM) {
@@ -149,6 +172,13 @@ void CPBDialog::OnUpdate(CCmdUI* pCmdUI) {
 
     case IDC_DELETE_PATH_BTN:
         if (m_blockedPathsList.GetCurSel() != LB_ERR)
+            pCmdUI->Enable(TRUE);
+        else
+            pCmdUI->Enable(FALSE);
+        break;
+
+    case IDC_DELETE_ALL_PATH_BTN:
+        if (m_blockedPathsList.GetCount() > 0)
             pCmdUI->Enable(TRUE);
         else
             pCmdUI->Enable(FALSE);
@@ -173,17 +203,16 @@ void CPBDialog::RefreshPaths() {
 
         if (!pBuffer) {
             MessageBox(L"Not enough memory. Can't fill paths list fully.", L"", MB_ICONERROR);
-            return;
+            
+            break;
         }
 
         bytesReturned = 0;
 
-        if (!m_pbDriver.GetPaths(pBuffer, bufferLength, &bytesReturned, fromEntry) || bytesReturned == 0) {
-            std::wstring errorMsg(L"Reading paths from driver error. ");
-            errorMsg += GetLastErrorStr();
-            MessageBox(errorMsg.c_str(), L"", MB_ICONERROR);
+        if (!m_pbDriver.GetPaths(pBuffer, bufferLength, &bytesReturned, fromEntry)) {
+            ShowErrorMsg(m_hWnd, L"Reading paths from driver error. ", L"", MB_ICONERROR);
 
-            delete[] pBuffer;
+            operator delete[](pBuffer, bufferLength);
             break;
         }
 
@@ -198,7 +227,7 @@ void CPBDialog::RefreshPaths() {
             bytesReturned -= (pathLength + 1) * sizeof(WCHAR);
         }
 
-        delete[] pBuffer;
+        operator delete[](pBuffer, bufferLength);
 
         fromEntry = m_blockedPathsList.GetCount();
 

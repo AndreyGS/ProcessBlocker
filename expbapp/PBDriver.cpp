@@ -25,28 +25,25 @@ bool TPBDriver::DelPath(const WCHAR* pPath) const noexcept {
 }
 
 bool TPBDriver::AddDelPath(bool isAdd, const WCHAR* pPath) const noexcept {
-    DWORD bytesReturned = 0, dataLength = 0;
+    DWORD pathSize = (DWORD)((wcslen(pPath) + 1) * sizeof(WCHAR));
+    DWORD dataLength = (DWORD)(sizeof(PathBuffer) - sizeof(PathBuffer::buffer) + pathSize);
+    PathBuffer* pathBuffer = (PathBuffer*) new (std::nothrow) CHAR[dataLength];
 
-    PathBuffer* pathBuffer = GetPathBuffer(isAdd, pPath, &dataLength);
     if (pathBuffer) {
+        DWORD bytesReturned = 0;
+
+        pathBuffer->add = isAdd;
+        memcpy(pathBuffer->buffer, pPath, pathSize);
+
         bool result = DeviceIoControl(m_hDevice, IOCTL_SET_PATH, nullptr, 0, pathBuffer, dataLength, &bytesReturned, nullptr);
-        delete pathBuffer;
+        operator delete(pathBuffer, dataLength);
         return result;
     }
     else
         return false;
 }
 
-// Need to free PathBuffer* manualy
-PathBuffer* TPBDriver::GetPathBuffer(IN bool IsAdd, IN const WCHAR* pPath, OUT DWORD* dataLength) const noexcept {
-    DWORD pathSize = (DWORD)((wcslen(pPath) + 1) * sizeof(WCHAR));
-    *dataLength = (DWORD)(sizeof(PathBuffer) - sizeof(PathBuffer::buffer) + pathSize);
-    PathBuffer* pathBuffer = (PathBuffer *) new (std::nothrow) CHAR[*dataLength];
-
-    if (pathBuffer) {
-        pathBuffer->add = IsAdd;
-        memcpy(pathBuffer->buffer, pPath, pathSize);
-    }
-
-    return pathBuffer;
+bool TPBDriver::DelAllPaths() const noexcept {
+    DWORD bytesReturned = 0;
+    return DeviceIoControl(m_hDevice, IOCTL_CLEAR_PATHS, nullptr, 0, nullptr, 0, &bytesReturned, nullptr);
 }

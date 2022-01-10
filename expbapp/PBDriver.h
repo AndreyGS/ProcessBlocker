@@ -20,8 +20,8 @@ public:
 
     bool AddPath(const WCHAR* pPath) const noexcept;
     bool DelPath(const WCHAR* pPath) const noexcept;
+    bool DelAllPaths() const noexcept;
 
 private:
-    PathBuffer* GetPathBuffer(IN bool IsAdd, IN const WCHAR* pPath, OUT DWORD* dataLength) const noexcept;
     bool AddDelPath(bool isAdd, const WCHAR* pPath) const noexcept;
 };

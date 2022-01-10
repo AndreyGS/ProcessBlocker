@@ -2,7 +2,7 @@
 #include "OtherFuncs.h"
 
 std::wstring GetLastErrorStr() {
-    DWORD i = ::GetLastError();
+    DWORD i = GetLastError();
 
     if (i == 0)
         return std::wstring();
@@ -16,4 +16,10 @@ std::wstring GetLastErrorStr() {
     LocalFree(pStr);
 
     return msg;
+}
+
+void ShowErrorMsg(HWND hwnd, const WCHAR* pText, const WCHAR* pCaption, LONG msgBoxType) {
+    std::wstring errorMsg(pText);
+    errorMsg += GetLastErrorStr();
+    MessageBoxW(hwnd, errorMsg.c_str(), L"", MB_ICONERROR);
 }

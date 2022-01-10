@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "exproccommon.h"
 
-#define REMEMBER_BAD_STATUS_IF_NEED(expr) { \
+#define RememberBasStatusIfNeed(expr) { \
     NTSTATUS status2 = expr; \
     if (!NT_SUCCESS(status2) && NT_SUCCESS(status)) \
         status = status2; \
@@ -84,6 +84,8 @@ NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN const UNICODE_STRING& valueNam
 void ClearProcPathsList();
 
 NTSTATUS NormalizePath(OUT UNICODE_STRING& path, IN const UNICODE_STRING& rawPath);
+bool FindPathInList(IN const UNICODE_STRING& path);
+
 NTSTATUS RemovePath(const UNICODE_STRING& path);
 NTSTATUS AddPath(const UNICODE_STRING& path);
 
@@ -135,8 +137,8 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pR
         g_valueDataSize = 0;
 
         status = ReadSettingsFromRegistry(RegistryValues::DataMaxSize);
-        REMEMBER_BAD_STATUS_IF_NEED(ReadSettingsFromRegistry(RegistryValues::Paths));
-        REMEMBER_BAD_STATUS_IF_NEED(ReadSettingsFromRegistry(RegistryValues::BlockingEnabled));
+        RememberBasStatusIfNeed(ReadSettingsFromRegistry(RegistryValues::Paths));
+        RememberBasStatusIfNeed(ReadSettingsFromRegistry(RegistryValues::BlockingEnabled));
 
         if (!NT_SUCCESS(status)) {
             KdPrint((DRIVER_PREFIX "failed to read settings from registry (0x%08X)\n", status));
@@ -190,8 +192,8 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
         {
             AutoLock guard(&g_guard);
             g_settings = *pSettings;
-            REMEMBER_BAD_STATUS_IF_NEED(WriteSettingsToRegistry(RegistryValues::BlockingEnabled));
-            REMEMBER_BAD_STATUS_IF_NEED(WriteSettingsToRegistry(RegistryValues::DataMaxSize));
+            RememberBasStatusIfNeed(WriteSettingsToRegistry(RegistryValues::BlockingEnabled));
+            RememberBasStatusIfNeed(WriteSettingsToRegistry(RegistryValues::DataMaxSize));
         }
         break;
     }
@@ -304,6 +306,8 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
     case IOCTL_CLEAR_PATHS: {
         AutoLock guard(&g_guard);
         ClearProcPathsList();
+        status = WriteSettingsToRegistry(RegistryValues::Paths);
+
         break;
     }
 
@@ -353,6 +357,29 @@ NTSTATUS NormalizePath(OUT UNICODE_STRING& path, IN const UNICODE_STRING& rawPat
     return status;
 }
 
+bool FindPathInList(IN const UNICODE_STRING& path) {
+    bool found = false;
+
+    do {
+        AutoLock guard(&g_guard);
+
+        if (IsListEmpty(&g_headOfBlockedPaths))
+            break;
+
+        LIST_ENTRY* pListItem = g_headOfBlockedPaths.Flink;
+
+        do {
+            if (!RtlCompareUnicodeString(&path, &((PBLOCKED_PROCESS_PATH)pListItem)->path, FALSE)) {
+                found = true;
+                break;
+            }
+        } while ((pListItem = pListItem->Flink) != &g_headOfBlockedPaths);
+
+    } while (false);
+
+    return found;
+}
+
 
 void OnProcessNotify(PEPROCESS, HANDLE, PPS_CREATE_NOTIFY_INFO createInfo) {
     UNICODE_STRING path = { 0 };
@@ -367,21 +394,9 @@ void OnProcessNotify(PEPROCESS, HANDLE, PPS_CREATE_NOTIFY_INFO createInfo) {
             
             if (!NT_SUCCESS(NormalizePath(path, *createInfo->CommandLine)))
                 break;
-            
-            {
-                AutoLock guard(&g_guard);
 
-                if (IsListEmpty(&g_headOfBlockedPaths) || !g_settings.isEnabled)
-                    break;
-
-                LIST_ENTRY* pListItem = g_headOfBlockedPaths.Flink;
-
-                do {
-                    if (!RtlCompareUnicodeString(&path, &((PBLOCKED_PROCESS_PATH)pListItem)->path, FALSE))
-                        createInfo->CreationStatus = STATUS_ACCESS_DENIED;
-
-                } while ((pListItem = pListItem->Flink) != &g_headOfBlockedPaths && NT_SUCCESS(createInfo->CreationStatus));
-            }
+            if (FindPathInList(path))
+                createInfo->CreationStatus = STATUS_ACCESS_DENIED;
         } while (false);
     }
 
@@ -439,7 +454,7 @@ NTSTATUS GetPathFromCmd(OUT PUNICODE_STRING pDest, IN PCUNICODE_STRING pSource) 
 
         // source, for example
         // \??\c:\1\test.exe[ -some_param] | "c:\1\test.exe"[ -someparam] | c:\1\test.exe[ -some_param] | "\\some_host\test.exe"[ -someparam] | \\some_host\test.exe[ -someparam]
-        while (s < se && !(*s >= L'a' && *s <= L'z' && *(s + 1) == L':') && !(*s == L'\\' && *s + 1 == L'\\')) {
+        while (s < se && !(*s >= L'a' && *s <= L'z' && *(s + 1) == L':') && !(*s == L'\\' && *(s + 1) == L'\\')) {
             if (*s == L'\"')
                 quotationed = true;
             ++s;
@@ -592,7 +607,7 @@ NTSTATUS ReadSettingDwordValue(IN HANDLE hKey, IN const UNICODE_STRING& valueNam
     do {
         status = ZwQueryValueKey(hKey, const_cast<PUNICODE_STRING>(&valueName), KeyValuePartialInformation, nullptr, 0, &size);
 
-        if (status != STATUS_BUFFER_TOO_SMALL || !(status == STATUS_BUFFER_TOO_SMALL && size == sizeof(KEY_VALUE_PARTIAL_INFORMATION) + sizeof(ULONG) - sizeof(UCHAR))) {
+        if (status != STATUS_BUFFER_TOO_SMALL || !(status == STATUS_BUFFER_TOO_SMALL && size != sizeof(ULONG))) {
             status = WriteSettingsToRegistry(value);
             break;
         }
@@ -694,6 +709,11 @@ NTSTATUS AddPath(const UNICODE_STRING& path) {
     PBLOCKED_PROCESS_PATH pBlockedProcessPath = nullptr;
 
     do {
+        if (FindPathInList(path)) {
+            status = STATUS_OBJECT_NAME_COLLISION;
+            break;
+        }
+
         pBlockedProcessPath = (PBLOCKED_PROCESS_PATH)ExAllocatePoolWithTag(PagedPool, sizeof(BLOCKED_PROCESS_PATH), PROCBLOCK_POOL_TAG);
 
         if (!pBlockedProcessPath) {
