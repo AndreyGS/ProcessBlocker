@@ -40,20 +40,6 @@ ULONG g_valueDataSize = 0;
 
 FAST_MUTEX g_guard;
 
-class RecursionExpectedFastMutex {
-    FAST_MUTEX guard;
-    FAST_MUTEX mutex;
-    ULONG recursionCount;
-public:
-    RecursionExpectedFastMutex() : recursionCount(0) { ExInitializeFastMutex(&guard), ExInitializeFastMutex(&mutex); }
-    void Lock() { ExAcquireFastMutex(&guard); recursionCount == 0 ? ExAcquireFastMutex(&mutex), ++recursionCount : ++recursionCount; ExReleaseFastMutex(&guard); }
-    void Unlock() { ExAcquireFastMutex(&guard); recursionCount > 0 ? --recursionCount == 0 ? ExReleaseFastMutex(&mutex), 0 : 0 : 0; ExReleaseFastMutex(&guard); }
-
-    ~RecursionExpectedFastMutex() {
-        ExReleaseFastMutex(&mutex);
-    }
-};
-
 class AutoLock {
     PFAST_MUTEX pGuard;
 public:

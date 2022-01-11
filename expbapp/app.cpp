@@ -79,7 +79,7 @@ void CPBDialog::OnAddPathBrowseBtnClicked() {
     ofn.hwndOwner = m_hWnd;
     ofn.lpstrFile = szFile;
     ofn.nMaxFile = sizeof(szFile);
-    ofn.lpstrFilter = L"All\0*.*\0Executive\0*.exe\0";
+    ofn.lpstrFilter = L"Executive\0*.exe\0All\0*.*\0";
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = nullptr;
     ofn.nMaxFileTitle = 0;
