@@ -16,8 +16,6 @@ BOOL CPBApp::InitInstance()
     return TRUE;
 }
 
-IMPLEMENT_DYNAMIC(CPBDialog, CDialog)
-
 BEGIN_MESSAGE_MAP(CPBDialog, CDialog)
     ON_BN_CLICKED(IDC_ADD_PATH_BROWSE_BTN, OnAddPathBrowseBtnClicked)
     ON_BN_CLICKED(IDC_ADD_PATH_BTN, OnAddPathBtnClicked)

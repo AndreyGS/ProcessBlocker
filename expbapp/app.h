@@ -6,8 +6,6 @@ public:
 };
 
 class CPBDialog : public CDialog {
-    DECLARE_DYNAMIC(CPBDialog)
-
 public:
     CPBDialog() : CDialog(IDD) {}
 
@@ -39,7 +37,6 @@ protected:
 private:
     DWORD prevMaxPathsSize;
 
-public:
     CEdit m_addPathEdit;
     CListBox m_blockedPathsList;
     CButton m_pbEnableCheck;
