@@ -44,14 +44,14 @@ BOOL CPBDialog::OnInitDialog() {
         return FALSE;
 
     if (!m_pbDriver.IsValid()) {
-        MessageBox(L"Can't access Process Blocker device", L"Starting of Process Blocker aborted!", MB_ICONSTOP);
+        MessageBox(L"Can't access Process Blocker device", L"Starting of Process Blocker aborted!", MB_OK | MB_ICONSTOP);
         return FALSE;
     }
     
     PROC_BLOCK_SETTINGS settings = { 0 };
 
     if (!m_pbDriver.GetSettings(settings)) {
-        MessageBox(L"Can't get Process Blocker settings", L"Starting of Process Blocker aborted!", MB_ICONSTOP);
+        MessageBox(L"Can't get Process Blocker settings", L"Starting of Process Blocker aborted!", MB_OK | MB_ICONSTOP);
         return FALSE;
     }
 
@@ -95,12 +95,12 @@ void CPBDialog::OnAddPathBtnClicked() {
     pathWithQuotationMarks += path + L"\"";
 
     if (m_pbDriver.AddPath(pathWithQuotationMarks.GetBuffer())) {
-        MessageBox(L"Path was successfuly added to list", L"", MB_OK);
+        MessageBox(L"Path was successfuly added to list", L"", MB_OK | MB_ICONINFORMATION);
         m_addPathEdit.SetWindowTextW(L"");
         RefreshPaths();
     }
     else
-        ShowErrorMsg(m_hWnd, L"Path wasn't added to list. ", L"", MB_ICONERROR);
+        ShowErrorMsg(m_hWnd, L"Path wasn't added to list. ", L"", MB_OK | MB_ICONERROR);
 }
 
 void CPBDialog::OnDelPathBtnClicked() {
@@ -115,12 +115,12 @@ void CPBDialog::OnDelPathBtnClicked() {
         std::wstring msg(L"Path \"");
         msg += path.GetBuffer();
         msg += L"\" was successfuly deleted from list";
-        MessageBox(msg.c_str(), L"", MB_OK);
+        MessageBox(msg.c_str(), L"", MB_OK | MB_ICONINFORMATION);
         m_addPathEdit.SetWindowTextW(L"");
         RefreshPaths();
     }
     else
-        ShowErrorMsg(m_hWnd, L"Deleting path from blocked process list ended with error. ", L"", MB_ICONERROR);
+        ShowErrorMsg(m_hWnd, L"Deleting path from blocked process list ended with error. ", L"", MB_OK | MB_ICONERROR);
 }
 
 void CPBDialog::OnDelAllPathBtnClicked() {
@@ -128,12 +128,12 @@ void CPBDialog::OnDelAllPathBtnClicked() {
         if (m_pbDriver.DelAllPaths())
             RefreshPaths();
         else
-            ShowErrorMsg(m_hWnd, L"Deleting paths from blocked process list ended with error. ", L"", MB_ICONERROR);
+            ShowErrorMsg(m_hWnd, L"Deleting paths from blocked process list ended with error. ", L"", MB_OK | MB_ICONERROR);
 }
 
 void CPBDialog::OnSettingsEdit() {
     if (GetDlgItemInt(IDC_MAX_PATHS_SIZE_EDIT) > 1048576) {
-        MessageBox(L"Max Paths Size cannot be larger that 1048576!", L"", MB_OK);
+        MessageBox(L"Max Paths Size cannot be larger that 1048576!", L"", MB_OK | MB_ICONINFORMATION);
         SetDlgItemInt(IDC_MAX_PATHS_SIZE_EDIT, prevMaxPathsSize, FALSE);
         return;
     }
@@ -147,11 +147,11 @@ void CPBDialog::OnSaveSettingsBtnClicked() {
     PROC_BLOCK_SETTINGS settings = { bool(m_pbEnableCheck.GetCheck()), GetDlgItemInt(IDC_MAX_PATHS_SIZE_EDIT) };
 
     if (m_pbDriver.SetSettings(settings)) {
-        MessageBox(L"Settings successfully saved!", L"", MB_OK);
+        MessageBox(L"Settings successfully saved!", L"", MB_OK | MB_ICONWARNING);
         m_saveSettingsBtn.EnableWindow(FALSE);
     }
     else
-        ShowErrorMsg(m_hWnd, L"Settings not saved! ", L"", MB_ICONERROR);
+        ShowErrorMsg(m_hWnd, L"Settings not saved! ", L"", MB_OK | MB_ICONERROR);
 }
 
 LRESULT CPBDialog::OnKickIdle(WPARAM, LPARAM) {
@@ -200,7 +200,7 @@ void CPBDialog::RefreshPaths() {
         pBuffer = new (std::nothrow) WCHAR[bufferLength / sizeof(WCHAR)];
 
         if (!pBuffer) {
-            MessageBox(L"Not enough memory. Can't fill paths list fully.", L"", MB_ICONERROR);
+            MessageBox(L"Not enough memory. Can't fill paths list fully.", L"", MB_OK | MB_ICONERROR);
             
             break;
         }
@@ -208,7 +208,7 @@ void CPBDialog::RefreshPaths() {
         bytesReturned = 0;
 
         if (!m_pbDriver.GetPaths(pBuffer, bufferLength, &bytesReturned, fromEntry)) {
-            ShowErrorMsg(m_hWnd, L"Reading paths from driver error. ", L"", MB_ICONERROR);
+            ShowErrorMsg(m_hWnd, L"Reading paths from driver error. ", L"", MB_OK | MB_ICONERROR);
 
             operator delete[](pBuffer, bufferLength);
             break;

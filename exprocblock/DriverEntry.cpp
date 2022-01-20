@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "exproccommon.h"
 
-#define RememberBasStatusIfNeed(expr) { \
+#define REMEMBER_BAD_STATUS_IF_NEED(expr) { \
     NTSTATUS status2 = expr; \
     if (!NT_SUCCESS(status2) && NT_SUCCESS(status)) \
         status = status2; \
@@ -77,7 +77,7 @@ NTSTATUS AddPath(const UNICODE_STRING& path);
 
 extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath) {
     NTSTATUS status = STATUS_SUCCESS;
-    __debugbreak();
+    //__debugbreak();
     pDriverObject->DriverUnload = DriverUnload;
     pDriverObject->MajorFunction[IRP_MJ_CREATE] = pDriverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchCreateClose;
     pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchDeviceControl;
@@ -123,8 +123,8 @@ extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pR
         g_valueDataSize = 0;
 
         status = ReadSettingsFromRegistry(RegistryValues::DataMaxSize);
-        RememberBasStatusIfNeed(ReadSettingsFromRegistry(RegistryValues::Paths));
-        RememberBasStatusIfNeed(ReadSettingsFromRegistry(RegistryValues::BlockingEnabled));
+        REMEMBER_BAD_STATUS_IF_NEED(ReadSettingsFromRegistry(RegistryValues::Paths));
+        REMEMBER_BAD_STATUS_IF_NEED(ReadSettingsFromRegistry(RegistryValues::BlockingEnabled));
 
         if (!NT_SUCCESS(status)) {
             KdPrint((DRIVER_PREFIX "failed to read settings from registry (0x%08X)\n", status));
@@ -178,8 +178,8 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
         {
             AutoLock guard(&g_guard);
             g_settings = *pSettings;
-            RememberBasStatusIfNeed(WriteSettingsToRegistry(RegistryValues::BlockingEnabled));
-            RememberBasStatusIfNeed(WriteSettingsToRegistry(RegistryValues::DataMaxSize));
+            REMEMBER_BAD_STATUS_IF_NEED(WriteSettingsToRegistry(RegistryValues::BlockingEnabled));
+            REMEMBER_BAD_STATUS_IF_NEED(WriteSettingsToRegistry(RegistryValues::DataMaxSize));
         }
         break;
     }
