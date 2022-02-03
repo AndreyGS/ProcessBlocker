@@ -188,11 +188,12 @@ void CPBDialog::OnUpdate(CCmdUI* pCmdUI) {
 }
 
 void CPBDialog::RefreshPaths() {
-    const DWORD bufferLength = 4096;
+    const DWORD bufferLength = 128; // current value was setted for testing proposes, in production there must be at least 1024
     DWORD fromEntry = 0;
     DWORD bytesReturned = 0;
     DWORD lastError = NO_ERROR;
     WCHAR* pBuffer = nullptr, * pTemp = nullptr;
+    bool wasTooLargePath = false;
 
     m_blockedPathsList.ResetContent();
 
@@ -210,11 +211,17 @@ void CPBDialog::RefreshPaths() {
         if (!m_pbDriver.GetPaths(pBuffer, bufferLength, &bytesReturned, fromEntry)) {
             ShowErrorMsg(m_hWnd, L"Reading paths from driver error. ", L"", MB_OK | MB_ICONERROR);
 
-            operator delete[](pBuffer, bufferLength);
+            delete[](pBuffer);
             break;
         }
 
         lastError = GetLastError();
+
+        if (bytesReturned == 0) {
+            wasTooLargePath = true;
+            ++fromEntry;
+            continue;
+        }
 
         pTemp = pBuffer;
 
@@ -223,11 +230,13 @@ void CPBDialog::RefreshPaths() {
             m_blockedPathsList.AddString(pTemp);
             pTemp += pathLength + 1;
             bytesReturned -= (pathLength + 1) * sizeof(WCHAR);
+            ++fromEntry;
         }
 
-        operator delete[](pBuffer, bufferLength);
-
-        fromEntry = m_blockedPathsList.GetCount();
+        delete[](pBuffer);
 
     } while (lastError == ERROR_MORE_DATA);
+
+    if (wasTooLargePath)
+        ShowErrorMsg(m_hWnd, L"One ore more paths were larger than buffer and where not included in current list! ", L"", MB_OK | MB_ICONERROR);
 }

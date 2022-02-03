@@ -77,7 +77,7 @@ NTSTATUS AddPath(const UNICODE_STRING& path);
 
 extern "C" NTSTATUS DriverEntry(PDRIVER_OBJECT pDriverObject, PUNICODE_STRING pRegistryPath) {
     NTSTATUS status = STATUS_SUCCESS;
-    //__debugbreak();
+
     pDriverObject->DriverUnload = DriverUnload;
     pDriverObject->MajorFunction[IRP_MJ_CREATE] = pDriverObject->MajorFunction[IRP_MJ_CLOSE] = DispatchCreateClose;
     pDriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchDeviceControl;
@@ -163,15 +163,15 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
 
     switch (pStack->Parameters.DeviceIoControl.IoControlCode) {
     case IOCTL_SET_SETTINGS: {
-        if (pStack->Parameters.DeviceIoControl.OutputBufferLength != sizeof(PROC_BLOCK_SETTINGS)) {
+        if (pStack->Parameters.DeviceIoControl.InputBufferLength != sizeof(PROC_BLOCK_SETTINGS)) {
             status = STATUS_INVALID_BUFFER_SIZE;
             break;
         }
 
-        PPROC_BLOCK_SETTINGS pSettings = (PPROC_BLOCK_SETTINGS)MmGetSystemAddressForMdlSafe(pIrp->MdlAddress, NormalPagePriority);
+        PPROC_BLOCK_SETTINGS pSettings = (PPROC_BLOCK_SETTINGS)pStack->Parameters.DeviceIoControl.Type3InputBuffer;
 
         if (!pSettings) {
-            status = STATUS_INSUFFICIENT_RESOURCES;
+            status = STATUS_INVALID_USER_BUFFER;
             break;
         }
 
@@ -190,10 +190,10 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
             break;
         }
 
-        PPROC_BLOCK_SETTINGS pSettings = (PPROC_BLOCK_SETTINGS)MmGetSystemAddressForMdlSafe(pIrp->MdlAddress, NormalPagePriority);
+        PPROC_BLOCK_SETTINGS pSettings = (PPROC_BLOCK_SETTINGS)pIrp->UserBuffer;
 
         if (!pSettings) {
-            status = STATUS_INSUFFICIENT_RESOURCES;
+            status = STATUS_INVALID_USER_BUFFER;
             break;
         }
 
@@ -206,17 +206,17 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
     }
 
     case IOCTL_SET_PATH: {
-        if (pStack->Parameters.DeviceIoControl.OutputBufferLength - sizeof(PathBuffer) + sizeof(CHAR) 
+        if (pStack->Parameters.DeviceIoControl.InputBufferLength - sizeof(PathBuffer) + sizeof(CHAR)
             > g_settings.maxPathsSize - (g_valueDataSize > MIN_DATA_SIZE ? g_valueDataSize : sizeof(END_OF_REG_MULTI_SZ))) 
         {
             status = STATUS_BUFFER_OVERFLOW;
             break;
         }
 
-        PathBuffer* pBuffer = (PathBuffer*)MmGetSystemAddressForMdlSafe(pIrp->MdlAddress, NormalPagePriority);
+        PathBuffer* pBuffer = (PathBuffer*)pStack->Parameters.DeviceIoControl.Type3InputBuffer;
 
         if (!pBuffer) {
-            status = STATUS_INSUFFICIENT_RESOURCES;
+            status = STATUS_INVALID_USER_BUFFER;
             break;
         }
 
@@ -242,12 +242,12 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
             break;
         }
 
-        ULONG firstIndex = *(ULONG*)pIrp->AssociatedIrp.SystemBuffer;
+        ULONG firstIndex = *(ULONG*)pStack->Parameters.DeviceIoControl.Type3InputBuffer;
 
-        CHAR* pBuffer = (CHAR*)MmGetSystemAddressForMdlSafe(pIrp->MdlAddress, NormalPagePriority);
+        CHAR* pBuffer = (CHAR*)pIrp->UserBuffer;
 
         if (!pBuffer) {
-            status = STATUS_INSUFFICIENT_RESOURCES;
+            status = STATUS_INVALID_USER_BUFFER;
             break;
         }
 
@@ -266,8 +266,10 @@ NTSTATUS DispatchDeviceControl(PDEVICE_OBJECT, PIRP pIrp) {
                 --firstIndex;
             }
 
-            if (pListItem == &g_headOfBlockedPaths)
+            if (pListItem == &g_headOfBlockedPaths) {
+                status = STATUS_NO_MORE_ENTRIES;
                 break;
+            }
 
             do {
                 UNICODE_STRING& path = ((PBLOCKED_PROCESS_PATH)pListItem)->path;

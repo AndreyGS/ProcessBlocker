@@ -8,7 +8,7 @@ bool TPBDriver::GetSettings(PROC_BLOCK_SETTINGS& settings) const noexcept {
 
 bool TPBDriver::SetSettings(const PROC_BLOCK_SETTINGS& settings) const noexcept {
     DWORD bytesReturned = 0;
-    return DeviceIoControl(m_hDevice, IOCTL_SET_SETTINGS, nullptr, 0, const_cast<PROC_BLOCK_SETTINGS*>(&settings), sizeof(settings), &bytesReturned, nullptr);
+    return DeviceIoControl(m_hDevice, IOCTL_SET_SETTINGS, const_cast<PROC_BLOCK_SETTINGS*>(&settings), sizeof(settings), nullptr, 0, &bytesReturned, nullptr);
 }
 
 bool TPBDriver::GetPaths(IN WCHAR* pPaths, IN DWORD pathBufferSize, OUT DWORD* pBytesReturned, IN DWORD fromEntry /*=0*/) const noexcept {
@@ -35,7 +35,7 @@ bool TPBDriver::AddDelPath(bool isAdd, const WCHAR* pPath) const noexcept {
         pathBuffer->add = isAdd;
         memcpy(pathBuffer->buffer, pPath, pathSize);
 
-        bool result = DeviceIoControl(m_hDevice, IOCTL_SET_PATH, nullptr, 0, pathBuffer, dataLength, &bytesReturned, nullptr);
+        bool result = DeviceIoControl(m_hDevice, IOCTL_SET_PATH, pathBuffer, dataLength, nullptr, 0, &bytesReturned, nullptr);
         operator delete(pathBuffer, dataLength);
         return result;
     }
