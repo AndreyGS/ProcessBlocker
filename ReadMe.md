@@ -8,7 +8,7 @@ This solution tested on Windows 10x64 1903
 
 ## License
 
-Copyright (c) 2020 Andrey Grabov-Smetankin
+Copyright (c) 2022 Andrey Grabov-Smetankin
 
 Permission is hereby granted, free of charge, to any person
 obtaining a copy of this software and associated documentation
