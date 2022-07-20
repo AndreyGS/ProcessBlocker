@@ -2,7 +2,7 @@
 
 This is software driver using for blocking undesirable apps from executing.
 
-To manipulate with driver here is also presents user-mode application. There you can add/del path to any of application that you want to block/unblock with current driver.
+To manipulate the driver, here is also presents small application. It allow you add/del path to any of application that you want to block/unblock with current driver.
 
 This solution tested on Windows 10x64 1903
 
